@@ -1,0 +1,14 @@
+2007-06-27  Stephen Deasey  <sdeasey@users.sf.net>
+
+	* README:
+	* LICENSE:
+	* Makefile:
+	* nsloopctl.c:
+	* tests/all.tcl:
+	* tests/loop.test:
+	* tests/config.tcl: Initial import of nsloopctl module into cvs.
+
+	This module incorporates the functionality of nsd/tclloop.c from
+	AOLserver 4.5 and thread cancelation from NaviServer/AOLserver
+	nsd/tclinit.c.
+

@@ -1,0 +1,8 @@
+nsloopctl
+
+This module redefines Tcl's "for", "foreach", and "while" commands to allow
+both the gathering of statistics about each loop, and also to provide a
+mechanism to pause, cancel, and resume a particular loop. 
+
+If an interp is stuck in something other than one of the standard loops then you
+can also send asynchronous abort signals to a thread.
