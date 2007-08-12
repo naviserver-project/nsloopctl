@@ -31,7 +31,8 @@
  * nsloopctl.c --
  *
  *      Replacements for the "for", "while", and "foreach" commands to be
- *      monitored and managed by "ns_loopctl" command.
+ *      monitored and managed by "loopctl_*" commands. Monitor threads
+ *      with interps and send Tcl async cancel messages.
  */
 
 #include "ns.h"
@@ -95,15 +96,34 @@ typedef struct ThreadData {
  * Static procedures defined in this file.
  */
 
-static Tcl_ObjCmdProc  ForObjCmd, WhileObjCmd, ForeachObjCmd, LoopCtlObjCmd;
+static Tcl_ObjCmdProc
+    LoopsObjCmd,
+    InfoObjCmd,
+    EvalObjCmd,
+    PauseObjCmd,
+    RunObjCmd,
+    CancelObjCmd,
+    ThreadsObjCmd,
+    AbortObjCmd;
+
+static Tcl_ObjCmdProc
+    ForObjCmd,
+    WhileObjCmd,
+    ForeachObjCmd;
+
 static Ns_TclTraceProc InitInterp;
+static Ns_TlsCleanup   ThreadCleanup;
+static Tcl_AsyncProc   ThreadAbort;
 
 static int CheckControl(Tcl_Interp *interp, LoopData *loopPtr);
 static void EnterLoop(LoopData *loopPtr, int objc, Tcl_Obj * CONST objv[]);
 static void LeaveLoop(LoopData *loopPtr);
 
-static Ns_TlsCleanup ThreadCleanup;
-static Tcl_AsyncProc ThreadAbort;
+static int List(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
+                Tcl_HashTable *tablePtr);
+static int Signal(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
+                  int signal);
+static LoopData *GetLoop(Tcl_Interp *interp, Tcl_Obj *objPtr);
 
 
 /*
@@ -166,7 +186,7 @@ InitInterp(Tcl_Interp *interp, void *arg)
 {
     ThreadData  *threadPtr;
     char         tid[32];
-    int          new;
+    int          i, new;
 
     /*
      * Make sure the thread in which this interp is running has
@@ -185,10 +205,28 @@ InitInterp(Tcl_Interp *interp, void *arg)
         Ns_TlsSet(&tls, threadPtr);
     }
 
-    Tcl_CreateObjCommand(interp, "ns_loopctl", LoopCtlObjCmd, threadPtr, NULL);
-    Tcl_CreateObjCommand(interp, "for",        ForObjCmd,     NULL, NULL);
-    Tcl_CreateObjCommand(interp, "while",      WhileObjCmd,   NULL, NULL);
-    Tcl_CreateObjCommand(interp, "foreach",    ForeachObjCmd, NULL, NULL);
+    static struct {
+        CONST char         *name;
+        Tcl_ObjCmdProc     *proc;
+    } ctlCmds[] = {
+        {"loopctl_loops",   LoopsObjCmd},
+        {"loopctl_info",    InfoObjCmd},
+        {"loopctl_eval",    EvalObjCmd},
+        {"loopctl_pause",   PauseObjCmd},
+        {"loopctl_run",     RunObjCmd},
+        {"loopctl_cancel",  CancelObjCmd},
+
+        {"loopctl_threads", ThreadsObjCmd},
+        {"loopctl_abort",   AbortObjCmd},
+
+        {"for",             ForObjCmd},
+        {"while",           WhileObjCmd},
+        {"foreach",         ForeachObjCmd}
+    };
+
+    for (i = 0; i < sizeof(ctlCmds) / sizeof(ctlCmds[0]); i++) {
+        Tcl_CreateObjCommand(interp, ctlCmds[i].name, ctlCmds[i].proc, NULL, NULL);
+    }
 
     return NS_OK;
 }
@@ -197,250 +235,312 @@ InitInterp(Tcl_Interp *interp, void *arg)
 /*
  *----------------------------------------------------------------------
  *
- * LoopCtlObjCmd --
+ * LoopsObjCmd, ThreadsObjCmd --
  *
- *      Control command to list all active for or while loops in
- *      any thread, get info (thread id and args) for an active
- *      loop, or signal cancel of a loop.
+ *      Implements loopctl_loops and loopctl_threads: return a list of
+ *      running loops / threads.
  *
  * Results:
  *      A standard Tcl result.
  *
  * Side effects:
- *      May cancel an active loop.  Not cancel results in a
- *      TCL_ERROR result for the "for" or "while" command,
- *      an exception which can possibly be caught.
+ *      None.
  *
  *----------------------------------------------------------------------
  */
 
 static int
-LoopCtlObjCmd(arg, interp, objc, objv)
-     ClientData arg;                     /* Pointer to NsInterp. */
-     Tcl_Interp *interp;                 /* Current interpreter. */
-     int objc;                           /* Number of arguments. */
-     Tcl_Obj *CONST objv[];              /* Argument objects. */
+LoopsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    LoopData       *loopPtr;
-    EvalData        eval;
-    ThreadData     *threadPtr;
-    Tcl_HashTable  *tablePtr;
-    Tcl_HashEntry  *hPtr;
+    return List(arg, interp, objc, objv, &loops);
+}
+
+static int
+ThreadsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    return List(arg, interp, objc, objv, &threads);
+}
+
+static int
+List(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
+     Tcl_HashTable *tablePtr)
+{
+    Tcl_Obj        *listPtr, *objPtr;
     Tcl_HashSearch  search;
-    Ns_Time         timeout;
-    char           *id;
-    char           *str;
-    Tcl_Obj        *objPtr, *listPtr;
-    int             result, len, status;
+    Tcl_HashEntry  *hPtr;
 
-    static CONST char *opts[] = {
-        "abort", "cancel", "eval", "info", "loops",
-        "pause", "resume", "threads", NULL
-    };
-    enum {
-        LAbortIdx, LCancelIdx, LEvalIdx,  LInfoIdx, LLoopsIdx,
-        LPauseIdx, LResumeIdx, LThreadsIdx
-    } opt;
-
-    if (objc < 2) {
-        Tcl_WrongNumArgs(interp, 1, objv, "option ?id?");
-        return TCL_ERROR;
-    }
-    if (Tcl_GetIndexFromObj(interp, objv[1], opts, "option", 0,
-                            (int *) &opt) != TCL_OK) {
-        return TCL_ERROR;
-    }
-
-    /*
-     * Handle the loops and threads commands and verify
-     * arguments first.
-     */
-
-    switch (opt) {
-
-    case LLoopsIdx:
-    case LThreadsIdx:
-        if (objc != 2) {
-            Tcl_WrongNumArgs(interp, 2, objv, NULL);
-            return TCL_ERROR;
-        }
-        tablePtr = (opt == LLoopsIdx) ? &loops : &threads;
-        listPtr = Tcl_NewListObj(0, NULL);
-
-        Ns_MutexLock(&lock);
-        hPtr = Tcl_FirstHashEntry(tablePtr, &search);
-        while (hPtr != NULL) {
-            objPtr = Tcl_NewStringObj(Tcl_GetHashKey(tablePtr, hPtr), -1);
-            Tcl_ListObjAppendElement(interp, listPtr, objPtr);
-            hPtr = Tcl_NextHashEntry(&search);
-        }
-        Ns_MutexUnlock(&lock);
-
-        Tcl_SetObjResult(interp, listPtr);
-        return TCL_OK;
-
-        break;
-
-    case LAbortIdx:
-        if (objc != 3) {
-            Tcl_WrongNumArgs(interp, 2, objv, "id");
-            return TCL_ERROR;
-        }
-        id = Tcl_GetString(objv[2]);
-
-        Ns_MutexLock(&lock);
-        hPtr = Tcl_FindHashEntry(&threads, id);
-        if (hPtr != NULL) {
-            threadPtr = Tcl_GetHashValue(hPtr);
-            Tcl_AsyncMark(threadPtr->cancel);
-            Tcl_SetObjResult(interp, Tcl_NewBooleanObj(1));
-            result = TCL_OK;
-        } else {
-            Tcl_AppendResult(interp, "no such active thread: ", id, NULL);
-            result = TCL_ERROR;
-        }
-        Ns_MutexUnlock(&lock);
-
-        return result;
-        break;
-
-    case LEvalIdx:
-        if (objc != 4) {
-            Tcl_WrongNumArgs(interp, 2, objv, "id script");
-            return TCL_ERROR;
-        }
-        break;
-
-    default:
-        if (objc != 3) {
-            Tcl_WrongNumArgs(interp, 2, objv, "id");
-            return TCL_ERROR;
-        }
-        break;
-    }
-
-    /*
-     * All other commands require an opaque loop id arg.
-     */
-
-    id = Tcl_GetString(objv[2]);
-    result = TCL_OK;
+    listPtr = Tcl_NewListObj(0, NULL);
 
     Ns_MutexLock(&lock);
-    hPtr = Tcl_FindHashEntry(&loops, id);
-    if (hPtr == NULL) {
-        switch (opt) {
-        case LInfoIdx:
-        case LEvalIdx:
-            Tcl_AppendResult(interp, "no such loop id: ",
-                             Tcl_GetString(objv[2]), NULL);
-            result = TCL_ERROR;
-            break;
-        default:
-            Tcl_SetObjResult(interp, Tcl_NewBooleanObj(0));
-            break;
-        }
+    hPtr = Tcl_FirstHashEntry(tablePtr, &search);
+    while (hPtr != NULL) {
+        objPtr = Tcl_NewStringObj(Tcl_GetHashKey(tablePtr, hPtr), -1);
+        Tcl_ListObjAppendElement(interp, listPtr, objPtr);
+        hPtr = Tcl_NextHashEntry(&search);
+    }
+    Ns_MutexUnlock(&lock);
+
+    Tcl_SetObjResult(interp, listPtr);
+
+    return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * InfoObjCmd --
+ *
+ *      Implements loopctl_info: return state about a running loop.
+ *
+ * Results:
+ *      A standard Tcl result.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+InfoObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    LoopData *loopPtr;
+    char     *desc;
+
+    if (objc != 2) {
+        Tcl_WrongNumArgs(interp, 1, objv, "loop-id");
+        return TCL_ERROR;
+    }
+
+    Ns_MutexLock(&lock);
+    if ((loopPtr = GetLoop(interp, objv[1])) == NULL) {
+        Ns_MutexUnlock(&lock);
+        return TCL_ERROR;
+    }
+
+    switch (loopPtr->control) {
+    case LOOP_RUN:
+        desc = "running";
+        break;
+    case LOOP_PAUSE:
+        desc = "paused";
+        break;
+    case LOOP_CANCEL:
+        desc = "canceled";
+        break;
+    default:
+        desc = "";
+        break;
+    }
+    Ns_TclPrintfResult(interp,
+        "loopid %s threadid %" PRIxPTR
+        " start %jd:%ld "
+        "spins %u status %s command {%s}",
+        Tcl_GetString(objv[1]), loopPtr->tid,
+        (intmax_t) loopPtr->etime.sec, loopPtr->etime.usec,
+        loopPtr->spins, desc, loopPtr->args.string);
+
+    Ns_MutexUnlock(&lock);
+
+    return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * EvalObjCmd --
+ *
+ *      Implements loopctl_eval: evaluate the given script in the context
+ *      of a running loop.
+ *
+ * Results:
+ *      A standard Tcl result.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    LoopData *loopPtr;
+    EvalData  eval;
+    char     *script;
+    Ns_Time   timeout;
+    int       len, result, status;
+
+    if (objc != 3) {
+        Tcl_WrongNumArgs(interp, 1, objv, "loop-id script");
+        return TCL_ERROR;
+    }
+
+    result = TCL_ERROR;
+
+    Ns_MutexLock(&lock);
+    if ((loopPtr = GetLoop(interp, objv[1])) == NULL) {
         goto done;
     }
 
-    loopPtr = Tcl_GetHashValue(hPtr);
-
-    switch (opt) {
-    case LLoopsIdx:
-    case LThreadsIdx:
-    case LAbortIdx:
-        /* NB: Silence warning. */
-        break;
-
-    case LInfoIdx:
-
-        switch (loopPtr->control) {
-        case LOOP_RUN:
-            str = "running";
-            break;
-        case LOOP_PAUSE:
-            str = "paused";
-            break;
-        case LOOP_CANCEL:
-            str = "canceled";
-            break;
-        default:
-            str = "";
-            break;
-        }
-        Ns_TclPrintfResult(interp,
-            "loopid %s threadid %" PRIxPTR " start %jd:%ld "
-            "spins %u status %s command {%s}",
-            id, loopPtr->tid, (intmax_t) loopPtr->etime.sec, loopPtr->etime.usec,
-            loopPtr->spins, str, loopPtr->args.string);
-        break;
-
-    case LEvalIdx:
-        if (loopPtr->evalPtr != NULL) {
-            Tcl_SetResult(interp, "eval pending", TCL_STATIC);
-            result = TCL_ERROR;
-            goto done;
-        }
-
-        /*
-         * Queue new script to eval.
-         */
-
-        eval.state = EVAL_WAIT;
-        eval.code = TCL_OK;
-        Tcl_DStringInit(&eval.result);
-        Tcl_DStringInit(&eval.script);
-        str = Tcl_GetStringFromObj(objv[3], &len);
-        Tcl_DStringAppend(&eval.script, str, len);
-        loopPtr->evalPtr = &eval;
-
-        /*
-         * Wait for result.
-         */
-
-        Ns_GetTime(&timeout);
-        Ns_IncrTime(&timeout, 2, 0);
-        Ns_CondBroadcast(&cond);
-
-        status = NS_OK;
-        while (status == NS_OK && eval.state == EVAL_WAIT) {
-            status = Ns_CondTimedWait(&cond, &lock, &timeout);
-        }
-
-        switch (eval.state) {
-        case EVAL_WAIT:
-            Tcl_SetResult(interp, "timeout: result dropped", TCL_STATIC);
-            loopPtr->evalPtr = NULL;
-            result = TCL_ERROR;
-            break;
-        case EVAL_DROP:
-            Tcl_SetResult(interp, "dropped: loop exited", TCL_STATIC);
-            result = TCL_ERROR;
-            break;
-        case EVAL_DONE:
-            Tcl_DStringResult(interp, &eval.result);
-            result = eval.code;
-        }
-        Tcl_DStringFree(&eval.script);
-        Tcl_DStringFree(&eval.result);
-        break;
-
-    case LResumeIdx:
-    case LPauseIdx:
-    case LCancelIdx:
-        if (opt == LCancelIdx) {
-            loopPtr->control = LOOP_CANCEL;
-        } else if (opt == LPauseIdx) {
-            loopPtr->control = LOOP_PAUSE;
-        } else {
-            loopPtr->control = LOOP_RUN;
-        }
-        Tcl_SetObjResult(interp, Tcl_NewBooleanObj(1));
-        Ns_CondBroadcast(&cond);
-        break;
+    if (loopPtr->evalPtr != NULL) {
+        Tcl_SetResult(interp, "eval pending", TCL_STATIC);
+        goto done;
     }
 
+    /*
+     * Queue new script to eval.
+     */
+
+    eval.state = EVAL_WAIT;
+    eval.code = TCL_OK;
+    Tcl_DStringInit(&eval.result);
+    Tcl_DStringInit(&eval.script);
+    script = Tcl_GetStringFromObj(objv[2], &len);
+    Tcl_DStringAppend(&eval.script, script, len);
+    loopPtr->evalPtr = &eval;
+
+    /*
+     * Wait for result.
+     */
+
+    Ns_GetTime(&timeout);
+    Ns_IncrTime(&timeout, 2, 0);
+    Ns_CondBroadcast(&cond);
+
+    status = NS_OK;
+    while (status == NS_OK && eval.state == EVAL_WAIT) {
+        status = Ns_CondTimedWait(&cond, &lock, &timeout);
+    }
+
+    switch (eval.state) {
+    case EVAL_WAIT:
+        Tcl_SetResult(interp, "timeout: result dropped", TCL_STATIC);
+        loopPtr->evalPtr = NULL;
+        break;
+
+    case EVAL_DROP:
+        Tcl_SetResult(interp, "dropped: loop exited", TCL_STATIC);
+        break;
+
+    case EVAL_DONE:
+        Tcl_DStringResult(interp, &eval.result);
+        result = eval.code;
+    }
+    Tcl_DStringFree(&eval.script);
+    Tcl_DStringFree(&eval.result);
+
  done:
+    Ns_MutexUnlock(&lock);
+
+    return result;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * PauseObjCmd, RunObjCmd, CancelObjCmd --
+ *
+ *      Implements loopctl_pause, loopctl_run and loopctl_cancel: send
+ *      control signal to a loop.
+ *
+ * Results:
+ *      A standard Tcl result.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+PauseObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    return Signal(arg, interp, objc, objv, LOOP_PAUSE);
+}
+
+static int
+RunObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    return Signal(arg, interp, objc, objv, LOOP_RUN);
+}
+
+static int
+CancelObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    return Signal(arg, interp, objc, objv, LOOP_CANCEL);
+}
+
+static int
+Signal(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
+       int signal)
+{
+    LoopData *loopPtr;
+
+    if (objc != 2) {
+        Tcl_WrongNumArgs(interp, 1, objv, "loop-id");
+        return TCL_ERROR;
+    }
+
+    Ns_MutexLock(&lock);
+    if ((loopPtr = GetLoop(interp, objv[1])) == NULL) {
+        Ns_MutexUnlock(&lock);
+        return TCL_ERROR;
+    }
+
+    loopPtr->control = signal;
+    Ns_CondBroadcast(&cond);
+
+    Ns_MutexUnlock(&lock);
+
+    return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * AbortObjCmd --
+ *
+ *      Implements loopctl_abort: abort a running thread using Tcl
+ *      async signals.
+ *
+ * Results:
+ *      A standard Tcl result.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+AbortObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    char           *id;
+    Tcl_HashEntry  *hPtr;
+    ThreadData     *threadPtr;
+    int             result;
+
+    if (objc != 2) {
+        Tcl_WrongNumArgs(interp, 1, objv, "thread-id");
+        return TCL_ERROR;
+    }
+    id = Tcl_GetString(objv[1]);
+
+    Ns_MutexLock(&lock);
+    hPtr = Tcl_FindHashEntry(&threads, id);
+    if (hPtr != NULL) {
+        threadPtr = Tcl_GetHashValue(hPtr);
+        Tcl_AsyncMark(threadPtr->cancel);
+        result = TCL_OK;
+    } else {
+        Tcl_AppendResult(interp, "no such active thread: ", id, NULL);
+        result = TCL_ERROR;
+    }
     Ns_MutexUnlock(&lock);
 
     return result;
@@ -455,13 +555,13 @@ LoopCtlObjCmd(arg, interp, objc, objv)
  *      This procedure is invoked to process the "for" Tcl command.
  *      See the user documentation for details on what it does.
  *
- *  With the bytecode compiler, this procedure is only called when
- *  a command name is computed at runtime, and is "for" or the name
- *  to which "for" was renamed: e.g.,
- *  "set z for; $z {set i 0} {$i<100} {incr i} {puts $i}"
+ *      With the bytecode compiler, this procedure is only called when
+ *      a command name is computed at runtime, and is "for" or the name
+ *      to which "for" was renamed: e.g.,
+ *      "set z for; $z {set i 0} {$i<100} {incr i} {puts $i}"
  *
- *  Copied from the Tcl source with additional calls to the 
- *  loop control facility.
+ *      Copied from the Tcl source with additional calls to the 
+ *      loop control facility.
  *
  * Results:
  *      A standard Tcl result.
@@ -558,12 +658,12 @@ ForObjCmd(arg, interp, objc, objv)
  *      This procedure is invoked to process the "while" Tcl command.
  *      See the user documentation for details on what it does.
  *
- *  With the bytecode compiler, this procedure is only called when
- *  a command name is computed at runtime, and is "while" or the name
- *  to which "while" was renamed: e.g., "set z while; $z {$i<100} {}"
+ *      With the bytecode compiler, this procedure is only called when
+ *      a command name is computed at runtime, and is "while" or the name
+ *      to which "while" was renamed: e.g., "set z while; $z {$i<100} {}"
  *
- *  Copied from the Tcl source with additional calls to the 
- *  loop control facility.
+ *      Copied from the Tcl source with additional calls to the 
+ *      loop control facility.
  *
  * Results:
  *      A standard Tcl result.
@@ -780,12 +880,12 @@ ForeachObjCmd(arg, interp, objc, objv)
             result = Tcl_ListObjGetElements(interp, argObjv[1+i*2],
                                             &varcList[i], &varvList[i]);
             if (result != TCL_OK) {
-                panic("nsloop: ForeachObjCmd: could not reconvert variable list %d to a list object\n", i);
+                panic("nsloopctl: ForeachObjCmd: could not reconvert variable list %d to a list object\n", i);
             }
             result = Tcl_ListObjGetElements(interp, argObjv[2+i*2],
                                             &argcList[i], &argvList[i]);
             if (result != TCL_OK) {
-                panic("nsloop: ForeachObjCmd: could not reconvert value list %d to a list object\n", i);
+                panic("nsloopctl: ForeachObjCmd: could not reconvert value list %d to a list object\n", i);
             }
 
             for (v = 0;  v < varcList[i];  v++) {
@@ -873,7 +973,7 @@ ForeachObjCmd(arg, interp, objc, objv)
  *      None.
  *
  * Side effects:
- *      Loop can be monitored and possibly canceled by "loop.ctl".
+ *      Loop can be monitored and possibly canceled by "loopctl_*".
  *
  *----------------------------------------------------------------------
  */
@@ -1064,4 +1164,39 @@ ThreadCleanup(void *arg)
 
     Tcl_AsyncDelete(threadPtr->cancel);
     ns_free(threadPtr);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * GetLoop --
+ *
+ *      Get the loop data struct given it's ID.
+ *
+ * Results:
+ *      Pointer to LoopData or NULL if no such loop ID exists.
+ *
+ * Side effects:
+ *      Tcl error message left as interp result.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static LoopData *
+GetLoop(Tcl_Interp *interp, Tcl_Obj *objPtr)
+{
+    char          *id;
+    Tcl_HashEntry *hPtr;
+    LoopData      *loopPtr;
+
+    id = Tcl_GetString(objPtr);
+    hPtr = Tcl_FindHashEntry(&loops, id);
+    if (hPtr == NULL) {
+        Tcl_AppendResult(interp, "no such loop id: ", id, NULL);
+        return NULL;
+    }
+    loopPtr = Tcl_GetHashValue(hPtr);
+
+    return loopPtr;
 }

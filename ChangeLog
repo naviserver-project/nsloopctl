@@ -1,3 +1,14 @@
+2007-08-12  Stephen Deasey  <sdeasey@users.sf.net>
+
+	* nsloopctl.c: One command, one C routine. Commands now named loopctl_*.
+
+	* Makefile:
+	* version_include:
+	* doc/src/mann/loopctl.man: Add man page.
+
+	* tests/loop.test: Fixup test for newly named commands and make the
+	tests for loop and thread exit success more explicit.
+
 2007-06-27  Stephen Deasey  <sdeasey@users.sf.net>
 
 	* README:

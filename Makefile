@@ -41,6 +41,17 @@ include  $(NAVISERVER)/include/Makefile.module
 
 
 
+doc:
+	$(MKDIR) doc/html doc/man
+
+html-doc: doc
+	dtplite -o doc/html html doc/src/mann/loopctl.man
+
+man-doc: doc
+	dtplite -o doc/man nroff doc/src/mann/loopctl.man
+
+
+
 NS_TEST_CFG  = -c -d -t tests/config.tcl
 NS_TEST_ALL  = tests/all.tcl $(TCLTESTARGS)
 
@@ -59,3 +70,6 @@ gdbruntest: all
 	@echo set args $(NS_TEST_CFG) > gdb.run
 	gdb -x gdb.run $(NSD)
 	rm gdb.run
+
+
+.PHONY: doc html-doc man-doc

@@ -1,0 +1,161 @@
+[include version_include]
+
+[manpage_begin loopctl n [vset version]]
+[moddesc   {NaviServer Modules}]
+[titledesc {Monitor and control running loops and threads}]
+
+
+[description]
+
+This module redefines Tcl's "for", "foreach", and "while" commands to allow
+both the gathering of statistics about each loop, and also to provide a
+mechanism to pause, cancel, and resume a particular loop. 
+
+[para]
+If an interp is stuck in something other than one of the standard loops then you
+can also send asynchronous abort signals to a thread.
+
+
+
+[section "LOOP COMMANDS"]
+[list_begin definitions]
+
+
+[call [cmd loopctl_loops]]
+
+Returns a list of loop IDs -- one for each running loop in all virtual
+servers. The loop IDs are opaque handles which can be passed to
+[cmd loopctl_info] for more information.
+
+
+
+[call [cmd loopctl_info] [arg loop-id]]
+
+Returns a list of attributes for the given loop in array-get format. If the loop
+ID is invalid, for example the loop exited between the calls to
+[cmd loopctl_loops] and [cmd loopctl_info], then an exception is raised.
+
+[list_begin definitions]
+
+[lst_item loopid]
+The process-wide unique ID of this loop.
+
+[lst_item threadid]
+The unique ID of the thread in which the loop is running. The thread ID is the
+same opaque handle which is returned from [cmd "ns_thread id"] and related
+commands, and the same as that appearing in the error log.
+
+The thread ID can be used with the [cmd loopctl_abort] command.
+
+[lst_item start]
+An [cmd ns_time] value when the loop began running.
+
+[lst_item spins]
+Number of loop iterations completed.
+
+[lst_item status]
+One of [term running], [term paused] or [term canceled]. The default state is
+[term running], and the state changes as the loop is controlled by the
+[cmd loopctl_pause], [cmd loopctl_run] and [cmd loopctl_cancel] commands.
+
+[lst_item command]
+If the [cmd loopctl_eval] command has been used to evaluate a command in the
+context of the running loop, then this is a list containing the command name and
+any args.
+
+
+[list_end]
+
+
+
+[call [cmd loopctl_eval] [arg loop-id] [arg script] ]
+
+Evaluate the given script at the top of the loop on the next spin, before the
+loop body is evaluated. The body of the loop will only be evaluated if the
+return value of [arg script] is TCL_OK (i.e. not error, break or continue).
+
+[nl]
+Use [cmd loopctl_eval] to manipulate loop control variables to un-stick a stuck
+loop, or to debug loop errors by logging variable state.
+
+
+
+[call [cmd loopctl_pause] [arg loop-id] ]
+
+At the top of the next spin of the loop, before the loop body is evaluated, halt
+execution. The thread containing the Tcl interpreter in which the loop is
+running will not run until the [cmd loopctl_run] is issued.
+
+
+
+[call [cmd loopctl_run] [arg loop-id] ]
+
+Un-pause a paused loop. The loop will continue by evaluating the loop body.
+
+
+
+[call [cmd loopctl_cancel] [arg loop-id] ]
+
+Raise an error at the top of the next spin of the loop, before the loop body is
+evaluated. The error will propagate until it is caught.
+
+
+[list_end]
+
+
+
+
+[section "THREAD COMMANDS"]
+[list_begin definitions]
+
+
+
+[call [cmd loopctl_threads] ]
+
+Returns a list of thread IDs -- one for each thread in which the loopctl module
+has been loaded.
+
+
+
+[call [cmd loopctl_abort] [arg thread-id] ]
+
+Send a signal to the given thread that an error should be raised. Tcl checks for
+signals after the body of every command is evaluated, so if the thread is stuck
+running the internals of a command and new commands do not get a chance to run,
+then the signal will not get processed by the Tcl interpreter. Otherwise,
+TCL_ERROR will be the return value of the next command to be processed, which
+will propagate until caught.
+
+
+[list_end]
+
+
+
+
+
+[section EXAMPLES]
+
+Use the control port to identify a stuck loop and fix it without restarting the
+server.
+
+[example_begin]
+server1:nscp 1> foreach lid [lb][cmd loopctl_loops][rb] {
+    array set loop [lb][cmd loopctl_info] $lid[rb]
+    lappend loops [lb]list $loop(spins) $lid[rb]
+}
+
+server1:nscp 2> set loops [lb]lsort -integer -decreasing -index 0 $loops[rb]
+
+server1:nscp 3> join $loops \n
+420001 cc
+3 d0
+17 d4
+
+server1:nscp 4> [cmd loopctl_cancel] cc
+[example_end]
+
+
+
+[see_also ns_thread]
+[keywords debug limit]
+[manpage_end]

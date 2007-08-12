@@ -39,132 +39,155 @@ eval ::tcltest::configure $argv
 
 test loop-1.1 {Loops} -body {
 
-	set l1 [llength [ns_loopctl loops]]
+    set l1 [llength [loopctl_loops]]
 
-	foreach x l {
-		set l2 [llength [ns_loopctl loops]]
-	}
+    foreach x l {
+        set l2 [llength [loopctl_loops]]
+    }
 
-	expr {$l2 - $l1}
+    expr {$l2 - $l1}
 
 } -cleanup {
-	unset -nocomplain l1 l2
+    unset -nocomplain l1 l2
 } -result 1
+
 
 test loop-1.2 {Threads} -body {
-	llength [lsearch -all [ns_loopctl threads] [ns_thread id]]
+    llength [lsearch -all [loopctl_threads] [ns_thread id]]
 } -result 1
+
 
 test loop-1.3 {Loop info} -body {
-	array set a [ns_loopctl info [lindex [ns_loopctl loops] 0]]
-	lsort [array names a]
+    array set a [loopctl_info [lindex [loopctl_loops] 0]]
+    lsort [array names a]
 } -cleanup {
-	unset -nocomplain a
+    unset -nocomplain a
 } -result {command loopid spins start status threadid}
 
+
 test loop-1.4 {Thread ID matches loop info} -body {
-	foreach l [ns_loopctl loops] {
-		array set a [ns_loopctl info $l]
-		lappend tids $a(threadid)
-	}
-	expr {[llength [lsearch -all $tids [ns_thread id]]] > -1}
+    foreach l [loopctl_loops] {
+        array set a [loopctl_info $l]
+        lappend tids $a(threadid)
+    }
+    expr {[llength [lsearch -all $tids [ns_thread id]]] > -1}
 } -cleanup {
-	unset -nocomplain a l tids
+    unset -nocomplain a l tids
 } -result 1
+
 
 test loop-1.5 {Thread abort} -body {
-	set tid [ns_thread begin {
-		nsv_set . loop-1.5-threadid [ns_thread id]
-		while {1} {
-			ns_log notice loop-1.5: thread looping
-			after 500
-		}
-	}]
-	after 1000
-	set ok [ns_loopctl abort [nsv_get . loop-1.5-threadid]]
-	ns_thread join $tid
 
-	set ok
+    set tid [ns_thread begin {
+
+        nsv_set . loop-1.5-aborted  0
+        nsv_set . loop-1.5-threadid [ns_thread id]
+
+        if {[catch {
+            while {1} {
+                ns_log notice loop-1.5: thread looping
+                after 500
+            }
+        } errmsg]} {
+            nsv_set . loop-1.5-aborted 1
+        }
+    }]
+
+    after 1000
+    loopctl_abort [nsv_get . loop-1.5-threadid]
+    ns_thread join $tid
+
+    nsv_get . loop-1.5-aborted
+
 } -cleanup {
-	unset -nocomplain tid ok
+    unset -nocomplain tid ok
 } -result 1
+
 
 test loop-1.6 {Loop cancel} -body {
 
-	# kick off an endless loop.
+    # kick off an endless loop.
 
-	set tid [ns_thread begin {
-		while {1} {
-			ns_log notice loop-1.6: thread looping
-			after 500
-		}
-	}]
-	after 1000
+    nsv_set . loop-1.6-canceled 0
 
-	# search for the correct loop ID using unique string
+    set tid [ns_thread begin {
+        if {[catch {
+            while {1} {
+                ns_log notice loop-1.6: thread looping
+                after 500
+            }
+        } errmsg]} {
+            nsv_set . loop-1.6-canceled 1
+        }
+    }]
 
-	foreach l [ns_loopctl loops] {
-		array set linfo [ns_loopctl info $l]
-		if {[string match *loop-1.6* $linfo(command)]} {
-			set lid $l
-			break
-		}
-	}
+    # search for the correct loop ID using unique string
 
-	# if found, attempt to cancel it.
+    after 1000
 
-	if {![info exists lid]} {
-		error "loop script not found"
-	}
+    foreach l [loopctl_loops] {
+        array set linfo [loopctl_info $l]
+        if {[string match *loop-1.6* $linfo(command)]} {
+            set lid $l
+            break
+        }
+    }
 
-	set ok [ns_loopctl cancel $lid]
-	ns_thread join $tid
+    # if found, attempt to cancel it.
 
-	set ok
+    if {![info exists lid]} {
+        error "loop script not found"
+    }
+
+    loopctl_cancel $lid
+    ns_thread join $tid
+
+    nsv_get . loop-1.6-canceled
 
 } -cleanup {
-	unset -nocomplain tid ok l lid linfo
+    unset -nocomplain tid ok l lid linfo
 } -result 1
+
 
 test loop-1.7 {Loop eval} -body {
 
-	# kick off an endless loop.
+    # kick off an endless loop.
 
-	set tid [ns_thread begin {
-		set doloop 1
-		while {$doloop} {
-			ns_log notice loop-1.7: thread looping
-			after 500
-		}
-	}]
-	after 1000
+    set tid [ns_thread begin {
+        set doloop 1
+        while {$doloop} {
+            ns_log notice loop-1.7: thread looping
+            after 500
+        }
+    }]
+    after 1000
 
-	# search for the correct loop ID using unique string
+    # search for the correct loop ID using unique string
 
-	foreach l [ns_loopctl loops] {
-		array set linfo [ns_loopctl info $l]
-		if {[string match *loop-1.7* $linfo(command)]} {
-			set lid $l
-			break
-		}
-	}
+    foreach l [loopctl_loops] {
+        array set linfo [loopctl_info $l]
+        if {[string match *loop-1.7* $linfo(command)]} {
+            set lid $l
+            break
+        }
+    }
 
-	# if found, send it some Tcl to evaluate
+    # if found, send it some Tcl to evaluate
 
-	if {![info exists lid]} {
-		error "loop script not found"
-	}
+    if {![info exists lid]} {
+        error "loop script not found"
+    }
 
-	set doloop [ns_loopctl eval $lid {
-		ns_log notice "loop-1.7: eval script running"
-		set doloop 0
-	}]
-	ns_thread join $tid
+    set doloop [loopctl_eval $lid {
+        ns_log notice "loop-1.7: eval script running"
+        set doloop 0
+    }]
+    ns_thread join $tid
 
-	set doloop
+    set doloop
 
 } -cleanup {
-	unset -nocomplain tid doloop l lid linfo
+    unset -nocomplain tid doloop l lid linfo
 } -result 0
 
 
