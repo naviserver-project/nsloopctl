@@ -37,28 +37,28 @@ ID is invalid, for example the loop exited between the calls to
 
 [list_begin definitions]
 
-[lst_item loopid]
+[def loopid]
 The process-wide unique ID of this loop.
 
-[lst_item threadid]
+[def threadid]
 The unique ID of the thread in which the loop is running. The thread ID is the
 same opaque handle which is returned from [cmd "ns_thread id"] and related
 commands, and the same as that appearing in the error log.
 
 The thread ID can be used with the [cmd loopctl_abort] command.
 
-[lst_item start]
+[def start]
 An [cmd ns_time] value when the loop began running.
 
-[lst_item spins]
+[def spins]
 Number of loop iterations completed.
 
-[lst_item status]
+[def status]
 One of [term running], [term paused] or [term canceled]. The default state is
 [term running], and the state changes as the loop is controlled by the
 [cmd loopctl_pause], [cmd loopctl_run] and [cmd loopctl_cancel] commands.
 
-[lst_item command]
+[def command]
 If the [cmd loopctl_eval] command has been used to evaluate a command in the
 context of the running loop, then this is a list containing the command name and
 any args.
@@ -74,7 +74,7 @@ Evaluate the given script at the top of the loop on the next spin, before the
 loop body is evaluated. The body of the loop will only be evaluated if the
 return value of [arg script] is TCL_OK (i.e. not error, break or continue).
 
-[nl]
+[para]
 Use [cmd loopctl_eval] to manipulate loop control variables to un-stick a stuck
 loop, or to debug loop errors by logging variable state.
 
