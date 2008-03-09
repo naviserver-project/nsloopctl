@@ -11,7 +11,7 @@
  *
  * The Original Code is AOLserver Code and related documentation
  * distributed by AOL.
- * 
+ *
  * The Initial Developer of the Original Code is America Online,
  * Inc. Portions created by AOL are Copyright (C) 1999 America Online,
  * Inc. All Rights Reserved.
@@ -27,7 +27,7 @@
  * version of this file under either the License or the GPL.
  */
 
-/* 
+/*
  * nsloopctl.c --
  *
  *      Replacements for the "for", "while", and "foreach" commands to be
@@ -335,10 +335,10 @@ InfoObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     }
     Ns_TclPrintfResult(interp,
         "loopid %s threadid %" PRIxPTR
-        " start %jd:%ld "
+        " start %" PRIu64 ":%ld "
         "spins %u status %s command {%s}",
         Tcl_GetString(objv[1]), loopPtr->tid,
-        (intmax_t) loopPtr->etime.sec, loopPtr->etime.usec,
+        (int64_t) loopPtr->etime.sec, loopPtr->etime.usec,
         loopPtr->spins, desc, loopPtr->args.string);
 
     Ns_MutexUnlock(&lock);
@@ -560,7 +560,7 @@ AbortObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
  *      to which "for" was renamed: e.g.,
  *      "set z for; $z {set i 0} {$i<100} {incr i} {puts $i}"
  *
- *      Copied from the Tcl source with additional calls to the 
+ *      Copied from the Tcl source with additional calls to the
  *      loop control facility.
  *
  * Results:
@@ -662,7 +662,7 @@ ForObjCmd(arg, interp, objc, objv)
  *      a command name is computed at runtime, and is "while" or the name
  *      to which "while" was renamed: e.g., "set z while; $z {$i<100} {}"
  *
- *      Copied from the Tcl source with additional calls to the 
+ *      Copied from the Tcl source with additional calls to the
  *      loop control facility.
  *
  * Results:
@@ -765,11 +765,11 @@ ForeachObjCmd(arg, interp, objc, objv)
      * the evaluation stack and that stack might be grown and reallocated
      * if the loop body requires a large amount of stack space.
      */
-    
+
 #define NUM_ARGS 9
     Tcl_Obj *(argObjStorage[NUM_ARGS]);
     Tcl_Obj **argObjv = argObjStorage;
-    
+
 #define STATIC_LIST_SIZE 4
     int indexArray[STATIC_LIST_SIZE];
     int varcListArray[STATIC_LIST_SIZE];
@@ -1004,7 +1004,7 @@ EnterLoop(LoopData *loopPtr, int objc, Tcl_Obj * CONST objv[])
         loopPtr->hPtr = Tcl_CreateHashEntry(&loops, loopPtr->lid, &new);
     } while (!new);
 
-    Tcl_SetHashValue(loopPtr->hPtr, loopPtr); 
+    Tcl_SetHashValue(loopPtr->hPtr, loopPtr);
     Ns_MutexUnlock(&lock);
 }
 
