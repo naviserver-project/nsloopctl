@@ -37,6 +37,7 @@
 
 #include "ns.h"
 
+NS_EXPORT Ns_ModuleInitProc Ns_ModuleInit;
 /*
  * The following structure supports sending a script to a
  * loop to eval.
@@ -60,16 +61,17 @@ typedef struct EvalData {
  * and "for" commands to maintain a copy of the current
  * args and provide a cancel flag.
  */
+typedef enum {
+    LOOP_RUN,
+    LOOP_PAUSE,
+    LOOP_CANCEL
+} LoopControl;
 
 typedef struct LoopData {
-    enum {
-        LOOP_RUN,
-        LOOP_PAUSE,
-        LOOP_CANCEL
-    } control;              /* Loop control commands. */
+    LoopControl    control;              /* Loop control commands. */
 
     char           lid[32]; /* Unique loop id. */
-    intptr_t       tid;     /* Thread id of script. */
+    uintptr_t      tid;     /* Thread id of script. */
     unsigned int   spins;   /* Loop iterations. */
     Ns_Time        etime;   /* Loop entry time. */
     Tcl_HashEntry *hPtr;    /* Entry in active loop table. */
@@ -119,7 +121,7 @@ static void LeaveLoop(LoopData *loopPtr);
 static int List(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
                 Tcl_HashTable *tablePtr);
 static int Signal(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
-                  int signal);
+                  LoopControl signal);
 static LoopData *GetLoop(Tcl_Interp *interp, Tcl_Obj *objPtr);
 
 
@@ -153,7 +155,7 @@ static Ns_Cond       cond;    /* Wait for evaluation to complete. */
  */
 
 int
-Ns_ModuleInit(const char *server, const char *module)
+Ns_ModuleInit(const char *server, const char *UNUSED(module))
 {
     static int once = 0;
 
@@ -173,17 +175,18 @@ Ns_ModuleInit(const char *server, const char *module)
     }
 
     Ns_TclRegisterTrace(server, InitInterp, NULL, NS_TCL_TRACE_CREATE);
-    Ns_RegisterProcInfo((Ns_Callback *)InitInterp, "nsloopctl:initinterp", NULL);
+    Ns_RegisterProcInfo((ns_funcptr_t)InitInterp, "nsloopctl:initinterp", NULL);
 
     return NS_OK;
 }
 
 static int
-InitInterp(Tcl_Interp *interp, const void *arg)
+InitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
 {
     ThreadData  *threadPtr;
     char         tid[32];
-    int          i, new;
+    int          new;
+    size_t       i;
 
     /*
      * Make sure the thread in which this interp is running has
@@ -221,7 +224,7 @@ InitInterp(Tcl_Interp *interp, const void *arg)
         {"foreach",         ForeachObjCmd}
     };
 
-    for (i = 0; i < sizeof(ctlCmds) / sizeof(ctlCmds[0]); i++) {
+    for (i = 0u; i < sizeof(ctlCmds) / sizeof(ctlCmds[0]); i++) {
         Tcl_CreateObjCommand(interp, ctlCmds[i].name, ctlCmds[i].proc, NULL, NULL);
     }
 
@@ -247,19 +250,19 @@ InitInterp(Tcl_Interp *interp, const void *arg)
  */
 
 static int
-LoopsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+LoopsObjCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
-    return List(arg, interp, objc, objv, &loops);
+    return List(clientData, interp, objc, objv, &loops);
 }
 
 static int
-ThreadsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+ThreadsObjCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
-    return List(arg, interp, objc, objv, &threads);
+    return List(clientData, interp, objc, objv, &threads);
 }
 
 static int
-List(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
+List(ClientData UNUSED(clientData), Tcl_Interp *interp, int UNUSED(objc), Tcl_Obj *const UNUSED(objv[]),
      Tcl_HashTable *tablePtr)
 {
     Tcl_Obj        *listPtr, *objPtr;
@@ -300,10 +303,10 @@ List(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
  */
 
 static int
-InfoObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+InfoObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
-    LoopData *loopPtr;
-    char     *desc;
+    LoopData   *loopPtr;
+    const char *desc;
 
     if (objc != 2) {
         Tcl_WrongNumArgs(interp, 1, objv, "loop-id");
@@ -362,7 +365,7 @@ InfoObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
  */
 
 static int
-EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+EvalObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     LoopData *loopPtr;
     EvalData  eval;
@@ -383,7 +386,7 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
     }
 
     if (loopPtr->evalPtr != NULL) {
-        Tcl_SetResult(interp, "eval pending", TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("eval pending", -1));
         goto done;
     }
 
@@ -414,12 +417,12 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 
     switch (eval.state) {
     case EVAL_WAIT:
-        Tcl_SetResult(interp, "timeout: result dropped", TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("timeout: result dropped", -1));
         loopPtr->evalPtr = NULL;
         break;
 
     case EVAL_DROP:
-        Tcl_SetResult(interp, "dropped: loop exited", TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("dropped: loop exited", -1));
         break;
 
     case EVAL_DONE:
@@ -454,26 +457,26 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
  */
 
 static int
-PauseObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+PauseObjCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
-    return Signal(arg, interp, objc, objv, LOOP_PAUSE);
+    return Signal(clientData, interp, objc, objv, LOOP_PAUSE);
 }
 
 static int
-RunObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+RunObjCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
-    return Signal(arg, interp, objc, objv, LOOP_RUN);
+    return Signal(clientData, interp, objc, objv, LOOP_RUN);
 }
 
 static int
-CancelObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+CancelObjCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
-    return Signal(arg, interp, objc, objv, LOOP_CANCEL);
+    return Signal(clientData, interp, objc, objv, LOOP_CANCEL);
 }
 
 static int
-Signal(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
-       int signal)
+Signal(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
+       LoopControl signal)
 {
     LoopData *loopPtr;
 
@@ -515,7 +518,7 @@ Signal(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
  */
 
 static int
-AbortObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+AbortObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     char           *id;
     Tcl_HashEntry  *hPtr;
@@ -570,11 +573,7 @@ AbortObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
  */
 
 static int
-ForObjCmd(arg, interp, objc, objv)
-     ClientData arg;                     /* Pointer to NsInterp. */
-     Tcl_Interp *interp;                 /* Current interpreter. */
-     int objc;                           /* Number of arguments. */
-     Tcl_Obj *const objv[];              /* Argument objects. */
+ForObjCmd(ClientData UNUSED(arg),  Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     LoopData  data;
     int       result, value;
@@ -672,11 +671,7 @@ ForObjCmd(arg, interp, objc, objv)
  */
 
 static int
-WhileObjCmd(arg, interp, objc, objv)
-     ClientData arg;                     /* Pointer to NsInterp. */
-     Tcl_Interp *interp;                 /* Current interpreter. */
-     int objc;                           /* Number of arguments. */
-     Tcl_Obj *const objv[];              /* Argument objects. */
+WhileObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     LoopData  data;
     int       result, value;
@@ -742,11 +737,7 @@ WhileObjCmd(arg, interp, objc, objv)
  */
 
 static int
-ForeachObjCmd(arg, interp, objc, objv)
-     ClientData arg;             /* Pointer to NsInterp. */
-     Tcl_Interp *interp;         /* Current interpreter. */
-     int objc;                   /* Number of arguments. */
-     Tcl_Obj *const objv[];      /* Argument objects. */
+ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     LoopData  data;
     int       result = TCL_OK;
@@ -794,7 +785,7 @@ ForeachObjCmd(arg, interp, objc, objv)
      */
 
     if (objc > NUM_ARGS) {
-        argObjv = (Tcl_Obj **) ckalloc(objc * sizeof(Tcl_Obj *));
+        argObjv = (Tcl_Obj **) ckalloc((size_t)objc * sizeof(Tcl_Obj *));
     }
     for (i = 0;  i < objc;  i++) {
         argObjv[i] = objv[i];
@@ -810,11 +801,11 @@ ForeachObjCmd(arg, interp, objc, objv)
 
     numLists = (objc-2)/2;
     if (numLists > STATIC_LIST_SIZE) {
-        index = (int *) ckalloc(numLists * sizeof(int));
-        varcList = (int *) ckalloc(numLists * sizeof(int));
-        varvList = (Tcl_Obj ***) ckalloc(numLists * sizeof(Tcl_Obj **));
-        argcList = (int *) ckalloc(numLists * sizeof(int));
-        argvList = (Tcl_Obj ***) ckalloc(numLists * sizeof(Tcl_Obj **));
+        index = (int *) ckalloc((size_t)numLists * sizeof(int));
+        varcList = (int *) ckalloc((size_t)numLists * sizeof(int));
+        varvList = (Tcl_Obj ***) ckalloc((size_t)numLists * sizeof(Tcl_Obj **));
+        argcList = (int *) ckalloc((size_t)numLists * sizeof(int));
+        argvList = (Tcl_Obj ***) ckalloc((size_t)numLists * sizeof(Tcl_Obj **));
     }
     for (i = 0;  i < numLists;  i++) {
         index[i] = 0;
@@ -1089,8 +1080,7 @@ CheckControl(Tcl_Interp *interp, LoopData *loopPtr)
         }
     }
     if (loopPtr->control == LOOP_CANCEL) {
-        Tcl_SetResult(interp, "nsloopctl: loop canceled: returning TCL_ERROR",
-                      TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("nsloopctl: loop canceled: returning TCL_ERROR", -1));
         result = TCL_ERROR;
     } else {
         result = TCL_OK;
@@ -1119,12 +1109,11 @@ CheckControl(Tcl_Interp *interp, LoopData *loopPtr)
  */
 
 static int
-ThreadAbort(ClientData ignored, Tcl_Interp *interp, int code)
+ThreadAbort(ClientData UNUSED(clientData), Tcl_Interp *interp, int UNUSED(code))
 {
     if (interp != NULL) {
         Tcl_ResetResult(interp);
-        Tcl_SetResult(interp, "nsloopctl: async thread abort: returning TCL_ERROR",
-                      TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("nsloopctl: async thread abort: returning TCL_ERROR", -1));
     } else {
         Ns_Log(Warning, "nsloopctl: no interp active");
     }
