@@ -37,6 +37,7 @@
 
 #include "ns.h"
 
+NS_EXPORT int Ns_ModuleVersion = 1;
 NS_EXPORT Ns_ModuleInitProc Ns_ModuleInit;
 /*
  * The following structure supports sending a script to a
