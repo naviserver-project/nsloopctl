@@ -155,7 +155,7 @@ static Ns_Cond       cond;    /* Wait for evaluation to complete. */
  *----------------------------------------------------------------------
  */
 
-int
+Ns_ReturnCode
 Ns_ModuleInit(const char *server, const char *UNUSED(module))
 {
     static int once = 0;
@@ -181,7 +181,7 @@ Ns_ModuleInit(const char *server, const char *UNUSED(module))
     return NS_OK;
 }
 
-static int
+static Ns_ReturnCode
 InitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
 {
     ThreadData  *threadPtr;
