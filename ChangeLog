@@ -61,7 +61,6 @@ Date:   2007-10-06
 
     Update man page for new tcllib-1.10 syntax
 
-M	ChangeLog
 M	doc/src/mann/loopctl.man
 
 commit c1dfe980340585fb1cc8972c20b112ae204011dd
@@ -73,7 +72,6 @@ Date:   2007-08-12
     Fixup test for newly named commands and make the
     tests for loop and thread exit success more explicit.
 
-M	ChangeLog
 M	Makefile
 A	doc/src/mann/loopctl.man
 M	nsloopctl.c
@@ -86,7 +84,6 @@ Date:   2007-06-27
 
     Initial revision
 
-A	ChangeLog
 A	LICENSE
 A	Makefile
 A	README
