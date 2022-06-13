@@ -1,29 +1,96 @@
-2007-10-06  Stephen Deasey  <sdeasey@users.sf.net>
+commit 6e5e940a66027d062eace565054260053acf0b2d
+Author: Gustaf Neumann <neumann@wu-wien.ac.at>
+Date:   2021-07-23
 
-	* doc/src/mann/loopctl.man: Update for new tcllib-1.10 syntax.
+    modernize code
 
-2007-08-12  Stephen Deasey  <sdeasey@users.sf.net>
+M	nsloopctl.c
 
-	* nsloopctl.c: One command, one C routine. Commands now named loopctl_*.
+commit aa0019f724bc73c00b20741e266f46d4fb03aaed
+Author: Gustaf Neumann <neumann@wu-wien.ac.at>
+Date:   2020-10-01
 
-	* Makefile:
-	* version_include:
-	* doc/src/mann/loopctl.man: Add man page.
+    added missing Ns_ModuleVersion
 
-	* tests/loop.test: Fixup test for newly named commands and make the
-	tests for loop and thread exit success more explicit.
+M	nsloopctl.c
 
-2007-06-27  Stephen Deasey  <sdeasey@users.sf.net>
+commit bc8282d8a6643678eaacc622ce24c3508d3df999
+Author: Gustaf Neumann <neumann@wu-wien.ac.at>
+Date:   2019-05-20
 
-	* README:
-	* LICENSE:
-	* Makefile:
-	* nsloopctl.c:
-	* tests/all.tcl:
-	* tests/loop.test:
-	* tests/config.tcl: Initial import of nsloopctl module into cvs.
+    modernize code (eliminate k&r function definitions, mark unused arguments are unused, reduce implicit conversions)
 
-	This module incorporates the functionality of nsd/tclloop.c from
-	AOLserver 4.5 and thread cancelation from NaviServer/AOLserver
-	nsd/tclinit.c.
+M	nsloopctl.c
 
+commit 39e0a5f1b23e83e7aeb4e201c0129bf86d71964a
+Author: Gustaf Neumann <neumann@wu-wien.ac.at>
+Date:   2018-12-06
+
+    tespace change
+
+M	nsloopctl.c
+
+commit 2833f32b426645b8aef13725247f45e6c5946aab
+Author: Gustaf Neumann <neumann@wu-wien.ac.at>
+Date:   2018-12-06
+
+    modenize code: let it compile with recent versions of Tcl and NaviServer
+
+M	nsloopctl.c
+
+commit 3151bfd307ed38b9deebbd0b4ecc19ea142daeed
+Author: Vlad Seryakov <vseryakov@gmail.com>
+Date:   2009-03-15
+
+    Make it consistent iwth other modules doc format
+
+M	doc/src/mann/loopctl.man
+R100	version_include	version_include.man
+
+commit a86562685d7c2ee6375cd6efca96e24dc1ab4b6a
+Author: Vlad Seryakov <vlad@crystalballinc.com>
+Date:   2008-03-09
+
+    Use int64_t instead of intmax_t
+
+M	nsloopctl.c
+
+commit bb2b2e0a923ca2bb9c8dcbf5534cf06a02226abe
+Author: Stephen Deasey <sdeasey@gmail.com>
+Date:   2007-10-06
+
+    Update man page for new tcllib-1.10 syntax
+
+M	ChangeLog
+M	doc/src/mann/loopctl.man
+
+commit c1dfe980340585fb1cc8972c20b112ae204011dd
+Author: Stephen Deasey <sdeasey@gmail.com>
+Date:   2007-08-12
+
+    One command, one C routine, commands now named loopctl_*; add man page
+    
+    Fixup test for newly named commands and make the
+    tests for loop and thread exit success more explicit.
+
+M	ChangeLog
+M	Makefile
+A	doc/src/mann/loopctl.man
+M	nsloopctl.c
+M	tests/loop.test
+A	version_include
+
+commit efbf2d8c7288a3b1549fa118dc3eec67cdb3a035
+Author: Stephen Deasey <sdeasey@gmail.com>
+Date:   2007-06-27
+
+    Initial revision
+
+A	ChangeLog
+A	LICENSE
+A	Makefile
+A	README
+A	nsloopctl.c
+A	tests/all.tcl
+A	tests/config.tcl
+A	tests/loop.test
