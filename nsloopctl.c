@@ -133,8 +133,8 @@ static LoopData *GetLoop(Tcl_Interp *interp, Tcl_Obj *objPtr);
 static Tcl_HashTable loops;   /* Currently running loops. */
 static Tcl_HashTable threads; /* Running threads with interps allocated. */
 static Ns_Tls        tls;     /* Slot for per-thread cancel cookie. */
-static Ns_Mutex      lock;    /* Lock around loops and threads tables. */
-static Ns_Cond       cond;    /* Wait for evaluation to complete. */
+static Ns_Mutex      lock = NULL; /* Lock around loops and threads tables. */
+static Ns_Cond       cond = NULL; /* Wait for evaluation to complete. */
 
 
 
@@ -160,15 +160,16 @@ Ns_ModuleInit(const char *server, const char *UNUSED(module))
 {
     static int once = 0;
 
-    Ns_MutexLock(&lock);
+    Ns_MasterLock();
     if (!once) {
         once = 1;
         Ns_MutexSetName(&lock, "nsloopctl");
+        Ns_CondInit(&cond);
         Tcl_InitHashTable(&loops, TCL_STRING_KEYS);
         Tcl_InitHashTable(&threads, TCL_STRING_KEYS);
         Ns_TlsAlloc(&tls, ThreadCleanup);
     }
-    Ns_MutexUnlock(&lock);
+    Ns_MasterUnlock(&lock);
 
     if (server == NULL) {
         Ns_Log(Error, "nsloopctl: module must be loaded into a virtual server.");
