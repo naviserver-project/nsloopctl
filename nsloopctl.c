@@ -130,11 +130,11 @@ static LoopData *GetLoop(Tcl_Interp *interp, Tcl_Obj *objPtr);
  * Static variables defined in this file.
  */
 
-static Tcl_HashTable loops;   /* Currently running loops. */
-static Tcl_HashTable threads; /* Running threads with interps allocated. */
-static Ns_Tls        tls;     /* Slot for per-thread cancel cookie. */
-static Ns_Mutex      lock = NULL; /* Lock around loops and threads tables. */
-static Ns_Cond       cond = NULL; /* Wait for evaluation to complete. */
+static Tcl_HashTable loops;        /* Currently running loops. */
+static Tcl_HashTable threads;      /* Running threads with interps allocated. */
+static Ns_Tls        tls;          /* Slot for per-thread cancel cookie. */
+static Ns_Mutex      lock = NULL;  /* Lock around loops and threads tables. */
+static Ns_Cond       cond = NULL;  /* Wait for evaluation to complete. */
 
 
 
@@ -158,18 +158,17 @@ static Ns_Cond       cond = NULL; /* Wait for evaluation to complete. */
 Ns_ReturnCode
 Ns_ModuleInit(const char *server, const char *UNUSED(module))
 {
-    static int once = 0;
+    static bool initialized = NS_FALSE;
 
     Ns_MasterLock();
-    if (!once) {
-        once = 1;
+    if (!initialized) {
+        initialized = NS_TRUE;
         Ns_MutexSetName(&lock, "nsloopctl");
-        Ns_CondInit(&cond);
         Tcl_InitHashTable(&loops, TCL_STRING_KEYS);
         Tcl_InitHashTable(&threads, TCL_STRING_KEYS);
         Ns_TlsAlloc(&tls, ThreadCleanup);
     }
-    Ns_MasterUnlock(&lock);
+    Ns_MasterUnlock();
 
     if (server == NULL) {
         Ns_Log(Error, "nsloopctl: module must be loaded into a virtual server.");
@@ -190,23 +189,6 @@ InitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
     int          new;
     size_t       i;
 
-    /*
-     * Make sure the thread in which this interp is running has
-     * been initialised for async signals.
-     */
-
-    threadPtr = Ns_TlsGet(&tls);
-    if (threadPtr == NULL) {
-        threadPtr = ns_malloc(sizeof(ThreadData));
-        threadPtr->cancel = Tcl_AsyncCreate(ThreadAbort, NULL);
-        snprintf(tid, sizeof(tid), "%" PRIxPTR, Ns_ThreadId());
-        Ns_MutexLock(&lock);
-        threadPtr->hPtr = Tcl_CreateHashEntry(&threads, tid, &new);
-        Tcl_SetHashValue(threadPtr->hPtr, threadPtr);
-        Ns_MutexUnlock(&lock);
-        Ns_TlsSet(&tls, threadPtr);
-    }
-
     static struct {
         const char         *name;
         Tcl_ObjCmdProc     *proc;
@@ -225,6 +207,24 @@ InitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
         {"while",           WhileObjCmd},
         {"foreach",         ForeachObjCmd}
     };
+
+    /*
+     * Make sure the thread in which this interp is running has
+     * been initialised for async signals.
+     */
+
+    threadPtr = Ns_TlsGet(&tls);
+    if (threadPtr == NULL) {
+        threadPtr = ns_malloc(sizeof(ThreadData));
+        threadPtr->cancel = Tcl_AsyncCreate(ThreadAbort, NULL);
+        snprintf(tid, sizeof(tid), "%" PRIxPTR, Ns_ThreadId());
+        Ns_MutexLock(&lock);
+        threadPtr->hPtr = Tcl_CreateHashEntry(&threads, tid, &new);
+        Tcl_SetHashValue(threadPtr->hPtr, threadPtr);
+        Ns_MutexUnlock(&lock);
+        Ns_TlsSet(&tls, threadPtr);
+    }
+
 
     for (i = 0u; i < sizeof(ctlCmds) / sizeof(ctlCmds[0]); i++) {
         Tcl_CreateObjCommand(interp, ctlCmds[i].name, ctlCmds[i].proc, NULL, NULL);
