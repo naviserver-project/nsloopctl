@@ -369,11 +369,12 @@ InfoObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj 
 static int
 EvalObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
-    LoopData *loopPtr;
-    EvalData  eval;
-    char     *script;
-    Ns_Time   timeout;
-    int       len, result, status;
+    LoopData  *loopPtr;
+    EvalData   eval;
+    char      *script;
+    Ns_Time    timeout;
+    int        result, status;
+    TCL_SIZE_T len;
 
     if (objc != 3) {
         Tcl_WrongNumArgs(interp, 1, objv, "loop-id script");
@@ -761,17 +762,17 @@ ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
     Tcl_Obj **argObjv = argObjStorage;
 
 #define STATIC_LIST_SIZE 4
-    int indexArray[STATIC_LIST_SIZE];
-    int varcListArray[STATIC_LIST_SIZE];
-    Tcl_Obj **varvListArray[STATIC_LIST_SIZE];
-    int argcListArray[STATIC_LIST_SIZE];
-    Tcl_Obj **argvListArray[STATIC_LIST_SIZE];
+    int        indexArray[STATIC_LIST_SIZE];
+    TCL_SIZE_T varcListArray[STATIC_LIST_SIZE];
+    Tcl_Obj  **varvListArray[STATIC_LIST_SIZE];
+    TCL_SIZE_T argcListArray[STATIC_LIST_SIZE];
+    Tcl_Obj  **argvListArray[STATIC_LIST_SIZE];
 
-    int *index = indexArray;               /* Array of value list indices */
-    int *varcList = varcListArray;         /* # loop variables per list */
-    Tcl_Obj ***varvList = varvListArray;   /* Array of var name lists */
-    int *argcList = argcListArray;         /* Array of value list sizes */
-    Tcl_Obj ***argvList = argvListArray;   /* Array of value lists */
+    int        *index = indexArray;         /* Array of value list indices */
+    TCL_SIZE_T *varcList = varcListArray;   /* # loop variables per list */
+    Tcl_Obj  ***varvList = varvListArray;   /* Array of var name lists */
+    TCL_SIZE_T *argcList = argcListArray;   /* Array of value list sizes */
+    Tcl_Obj  ***argvList = argvListArray;   /* Array of value lists */
 
     if (objc < 4 || (objc%2 != 0)) {
         Tcl_WrongNumArgs(interp, 1, objv,
@@ -804,9 +805,9 @@ ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
     numLists = (objc-2)/2;
     if (numLists > STATIC_LIST_SIZE) {
         index = (int *) ckalloc((size_t)numLists * sizeof(int));
-        varcList = (int *) ckalloc((size_t)numLists * sizeof(int));
+        varcList = (TCL_SIZE_T *) ckalloc((size_t)numLists * sizeof(TCL_SIZE_T));
         varvList = (Tcl_Obj ***) ckalloc((size_t)numLists * sizeof(Tcl_Obj **));
-        argcList = (int *) ckalloc((size_t)numLists * sizeof(int));
+        argcList = (TCL_SIZE_T *) ckalloc((size_t)numLists * sizeof(TCL_SIZE_T));
         argvList = (Tcl_Obj ***) ckalloc((size_t)numLists * sizeof(Tcl_Obj **));
     }
     for (i = 0;  i < numLists;  i++) {
@@ -1051,7 +1052,8 @@ CheckControl(Tcl_Interp *interp, LoopData *loopPtr)
 {
     Tcl_DString  script;
     char        *str;
-    int          result, len;
+    int          result;
+    TCL_SIZE_T   len;
 
     Ns_MutexLock(&lock);
     ++loopPtr->spins;
