@@ -96,7 +96,7 @@ typedef struct ThreadData {
  * Static procedures defined in this file.
  */
 
-static Tcl_ObjCmdProc
+static TCL_OBJCMDPROC_T
     LoopsObjCmd,
     InfoObjCmd,
     EvalObjCmd,
@@ -106,7 +106,7 @@ static Tcl_ObjCmdProc
     ThreadsObjCmd,
     AbortObjCmd;
 
-static Tcl_ObjCmdProc
+static TCL_OBJCMDPROC_T
     ForObjCmd,
     WhileObjCmd,
     ForeachObjCmd;
@@ -116,12 +116,12 @@ static Ns_TlsCleanup   ThreadCleanup;
 static Tcl_AsyncProc   ThreadAbort;
 
 static int CheckControl(Tcl_Interp *interp, LoopData *loopPtr);
-static void EnterLoop(LoopData *loopPtr, int objc, Tcl_Obj * const objv[]);
+static void EnterLoop(LoopData *loopPtr, TCL_SIZE_T objc, Tcl_Obj * const objv[]);
 static void LeaveLoop(LoopData *loopPtr);
 
-static int List(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
+static int List(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[],
                 Tcl_HashTable *tablePtr);
-static int Signal(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
+static int Signal(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[],
                   LoopControl signal);
 static LoopData *GetLoop(Tcl_Interp *interp, Tcl_Obj *objPtr);
 
@@ -191,7 +191,7 @@ InitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
 
     static struct {
         const char         *name;
-        Tcl_ObjCmdProc     *proc;
+        TCL_OBJCMDPROC_T     *proc;
     } ctlCmds[] = {
         {"loopctl_loops",   LoopsObjCmd},
         {"loopctl_info",    InfoObjCmd},
@@ -227,7 +227,7 @@ InitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
 
 
     for (i = 0u; i < sizeof(ctlCmds) / sizeof(ctlCmds[0]); i++) {
-        Tcl_CreateObjCommand(interp, ctlCmds[i].name, ctlCmds[i].proc, NULL, NULL);
+        TCL_CREATEOBJCOMMAND(interp, ctlCmds[i].name, ctlCmds[i].proc, NULL, NULL);
     }
 
     return NS_OK;
@@ -252,19 +252,19 @@ InitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
  */
 
 static int
-LoopsObjCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+LoopsObjCmd(ClientData clientData, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     return List(clientData, interp, objc, objv, &loops);
 }
 
 static int
-ThreadsObjCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+ThreadsObjCmd(ClientData clientData, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     return List(clientData, interp, objc, objv, &threads);
 }
 
 static int
-List(ClientData UNUSED(clientData), Tcl_Interp *interp, int UNUSED(objc), Tcl_Obj *const UNUSED(objv[]),
+List(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T UNUSED(objc), Tcl_Obj *const UNUSED(objv[]),
      Tcl_HashTable *tablePtr)
 {
     Tcl_Obj        *listPtr, *objPtr;
@@ -305,7 +305,7 @@ List(ClientData UNUSED(clientData), Tcl_Interp *interp, int UNUSED(objc), Tcl_Ob
  */
 
 static int
-InfoObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+InfoObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     LoopData   *loopPtr;
     const char *desc;
@@ -367,7 +367,7 @@ InfoObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj 
  */
 
 static int
-EvalObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+EvalObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     LoopData  *loopPtr;
     EvalData   eval;
@@ -460,25 +460,25 @@ EvalObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj 
  */
 
 static int
-PauseObjCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+PauseObjCmd(ClientData clientData, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     return Signal(clientData, interp, objc, objv, LOOP_PAUSE);
 }
 
 static int
-RunObjCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+RunObjCmd(ClientData clientData, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     return Signal(clientData, interp, objc, objv, LOOP_RUN);
 }
 
 static int
-CancelObjCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+CancelObjCmd(ClientData clientData, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     return Signal(clientData, interp, objc, objv, LOOP_CANCEL);
 }
 
 static int
-Signal(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
+Signal(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[],
        LoopControl signal)
 {
     LoopData *loopPtr;
@@ -521,7 +521,7 @@ Signal(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *con
  */
 
 static int
-AbortObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+AbortObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     char           *id;
     Tcl_HashEntry  *hPtr;
@@ -576,7 +576,7 @@ AbortObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj
  */
 
 static int
-ForObjCmd(ClientData UNUSED(arg),  Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+ForObjCmd(ClientData UNUSED(arg),  Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     LoopData  data;
     int       result, value;
@@ -674,7 +674,7 @@ ForObjCmd(ClientData UNUSED(arg),  Tcl_Interp *interp, int objc, Tcl_Obj *const 
  */
 
 static int
-WhileObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+WhileObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     LoopData  data;
     int       result, value;
@@ -740,11 +740,11 @@ WhileObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj
  */
 
 static int
-ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     LoopData  data;
     int       result = TCL_OK;
-    int       i;              /* i selects a value list */
+    TCL_SIZE_T       i;              /* i selects a value list */
     int       j, maxj;        /* Number of loop iterations */
     int       v;              /* v selects a loop variable */
     int       numLists;       /* Count of value lists */
@@ -762,17 +762,17 @@ ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
     Tcl_Obj **argObjv = argObjStorage;
 
 #define STATIC_LIST_SIZE 4
-    int        indexArray[STATIC_LIST_SIZE];
+    TCL_SIZE_T indexArray[STATIC_LIST_SIZE];
     TCL_SIZE_T varcListArray[STATIC_LIST_SIZE];
     Tcl_Obj  **varvListArray[STATIC_LIST_SIZE];
     TCL_SIZE_T argcListArray[STATIC_LIST_SIZE];
     Tcl_Obj  **argvListArray[STATIC_LIST_SIZE];
 
-    int        *index = indexArray;         /* Array of value list indices */
+    TCL_SIZE_T *index = indexArray;          /* Array of value list indices */
     TCL_SIZE_T *varcList = varcListArray;   /* # loop variables per list */
     Tcl_Obj  ***varvList = varvListArray;   /* Array of var name lists */
     TCL_SIZE_T *argcList = argcListArray;   /* Array of value list sizes */
-    Tcl_Obj  ***argvList = argvListArray;   /* Array of value lists */
+    Tcl_Obj   ***argvList = argvListArray;   /* Array of value lists */
 
     if (objc < 4 || (objc%2 != 0)) {
         Tcl_WrongNumArgs(interp, 1, objv,
@@ -804,7 +804,7 @@ ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
 
     numLists = (objc-2)/2;
     if (numLists > STATIC_LIST_SIZE) {
-        index = (int *) ckalloc((size_t)numLists * sizeof(int));
+        index =    (TCL_SIZE_T *) ckalloc((size_t)numLists * sizeof(TCL_SIZE_T));
         varcList = (TCL_SIZE_T *) ckalloc((size_t)numLists * sizeof(TCL_SIZE_T));
         varvList = (Tcl_Obj ***) ckalloc((size_t)numLists * sizeof(Tcl_Obj **));
         argcList = (TCL_SIZE_T *) ckalloc((size_t)numLists * sizeof(TCL_SIZE_T));
@@ -871,12 +871,12 @@ ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
             result = Tcl_ListObjGetElements(interp, argObjv[1+i*2],
                                             &varcList[i], &varvList[i]);
             if (result != TCL_OK) {
-                Tcl_Panic("nsloopctl: ForeachObjCmd: could not reconvert variable list %d to a list object\n", i);
+                Tcl_Panic("nsloopctl: ForeachObjCmd: could not reconvert variable list %ld to a list object\n", (long)i);
             }
             result = Tcl_ListObjGetElements(interp, argObjv[2+i*2],
                                             &argcList[i], &argvList[i]);
             if (result != TCL_OK) {
-                Tcl_Panic("nsloopctl: ForeachObjCmd: could not reconvert value list %d to a list object\n", i);
+                Tcl_Panic("nsloopctl: ForeachObjCmd: could not reconvert value list %ld to a list object\n", (long)i);
             }
 
             for (v = 0;  v < varcList[i];  v++) {
@@ -970,9 +970,10 @@ ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
  */
 
 static void
-EnterLoop(LoopData *loopPtr, int objc, Tcl_Obj * const objv[])
+EnterLoop(LoopData *loopPtr, TCL_SIZE_T objc, Tcl_Obj * const objv[])
 {
-    int i, new;
+    TCL_SIZE_T i;
+    int new;
     static unsigned int next = 0;
 
     loopPtr->control = LOOP_RUN;
