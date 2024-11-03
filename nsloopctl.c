@@ -210,7 +210,7 @@ InitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
 
     /*
      * Make sure the thread in which this interp is running has
-     * been initialised for async signals.
+     * been initialized for async signals.
      */
 
     threadPtr = Ns_TlsGet(&tls);
@@ -864,7 +864,7 @@ ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T objc
              * the same, but the array of elements might be different
              * if the internal rep of the objects has been lost and
              * recreated (it is too difficult to accurately tell when
-             * this happens, which can lead to some wierd crashes,
+             * this happens, which can lead to some weird crashes,
              * like Bug #494348...)
              */
 

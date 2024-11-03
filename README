@@ -1,5 +1,7 @@
 nsloopctl
 
+Compatibility: The module compiles with Tcl 8.5, 8.6 and 9.0.
+
 This module redefines Tcl's "for", "foreach", and "while" commands to allow
 both the gathering of statistics about each loop, and also to provide a
 mechanism to pause, cancel, and resume a particular loop. 
