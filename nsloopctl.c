@@ -181,7 +181,7 @@ Ns_ModuleInit(const char *server, const char *UNUSED(module))
     return NS_OK;
 }
 
-static Ns_ReturnCode
+static int
 InitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
 {
     ThreadData  *threadPtr;
