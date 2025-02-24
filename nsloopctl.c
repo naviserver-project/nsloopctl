@@ -742,13 +742,13 @@ WhileObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T objc, 
 static int
 ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
-    LoopData  data;
-    int       result = TCL_OK;
-    TCL_SIZE_T       i;              /* i selects a value list */
-    int       j, maxj;        /* Number of loop iterations */
-    int       v;              /* v selects a loop variable */
-    int       numLists;       /* Count of value lists */
-    Tcl_Obj  *bodyPtr;
+    LoopData   data;
+    int        result = TCL_OK;
+    TCL_SIZE_T i;              /* i selects a value list */
+    TCL_SIZE_T j, maxj;        /* Number of loop iterations */
+    int        v;              /* v selects a loop variable */
+    TCL_SIZE_T numLists;       /* Count of value lists */
+    Tcl_Obj   *bodyPtr;
 
     /*
      * We copy the argument object pointers into a local array to avoid
@@ -880,8 +880,8 @@ ForeachObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T objc
             }
 
             for (v = 0;  v < varcList[i];  v++) {
-                int k = index[i]++;
-                Tcl_Obj *valuePtr, *varValuePtr;
+                TCL_SIZE_T k = index[i]++;
+                Tcl_Obj   *valuePtr, *varValuePtr;
 
                 if (k < argcList[i]) {
                     valuePtr = argvList[i][k];
