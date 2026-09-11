@@ -8,7 +8,10 @@
 # America Online, Inc. All Rights Reserved.
 #
 
-NAVISERVER = /usr/local/ns
+ifndef NAVISERVER
+	NAVISERVER = /usr/local/ns
+endif
+
 NSD        = $(NAVISERVER)/bin/nsd
 
 MODNAME      = nsloopctl
